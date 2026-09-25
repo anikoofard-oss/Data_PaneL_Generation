@@ -1,21 +1,8 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
-"""
-Data Panel & Report Generator
------------------------------
-Converts Cadence Virtuoso ADE Maestro CSV exports into formatted PowerPoint (.pptx)
-and PDF (.pdf) simulation summary reports with Pass/Fail color highlights and table gridlines.
-
-Repository: https://github.com/anikoofard-oss/Data_PaneL_Generation
-Author: Ali Nikoofard
-License: MIT
-"""
+# Code Iteration #36
 import csv
 import os
 import sys
 import math
-import subprocess
 
 # -----------------------------------------------------------------------------
 # 1. Automatic Package Resolver
@@ -25,6 +12,7 @@ try:
 except ImportError:
     print("Notice: 'reportlab' module not found. Installing reportlab for direct PDF generation...", flush=True)
     try:
+        import subprocess
         subprocess.run([sys.executable, "-m", "pip", "install", "--user", "reportlab"], check=True)
         import reportlab
         print("Success: 'reportlab' installed successfully!", flush=True)
@@ -39,10 +27,28 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from pptx import Presentation
 from pptx.util import Inches, Pt
 from pptx.dml.color import RGBColor
+from pptx.oxml import parse_xml
+from pptx.oxml.ns import nsdecls
 
-# PDF allows up to 30 rows per page comfortably; PPTX slides use 16
 MAX_ROWS_PER_PDF_PAGE = 30
 MAX_ROWS_PER_PPTX_SLIDE = 16
+
+def set_pptx_cell_border(cell, color="000000", width="12700"):
+    """Applies explicit OpenXML stroke lines to PowerPoint table cells."""
+    tcPr = cell._tc.get_or_add_tcPr()
+    for child in list(tcPr):
+        if child.tag.endswith('tcBorders'):
+            tcPr.remove(child)
+            
+    tcBorders = parse_xml(f'''
+        <a:tcBorders {nsdecls("a")}>
+            <a:lnL w="{width}" cmpd="s"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:lnL>
+            <a:lnR w="{width}" cmpd="s"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:lnR>
+            <a:lnT w="{width}" cmpd="s"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:lnT>
+            <a:lnB w="{width}" cmpd="s"><a:solidFill><a:srgbClr val="{color}"/></a:solidFill></a:lnB>
+        </a:tcBorders>
+    ''')
+    tcPr.append(tcBorders)
 
 def evaluate_pass_fail(val_str, spec_str):
     """Evaluates numeric values against spec strings strictly."""
@@ -203,7 +209,7 @@ def build_reports(csv_path, pptx_output_path):
         print(f"NOTICE: Direct ReportLab PDF export encountered an issue ({e}).", flush=True)
 
     # -----------------------------------------------------------------------------
-    # 3. Build PowerPoint Deck (.pptx)
+    # 3. Build PowerPoint Deck (.pptx) with Explicit Black Borders
     # -----------------------------------------------------------------------------
     prs = Presentation()
     num_cols = len(headers)
@@ -220,6 +226,15 @@ def build_reports(csv_path, pptx_output_path):
         table_shape = slide.shapes.add_table(rows_in_table, num_cols, Inches(0.4), Inches(0.4), Inches(9.2), Inches(0.28 * rows_in_table))
         table = table_shape.table
 
+        # Strips default PowerPoint table theme override
+        tblPr = table._tbl.tblPr
+        tblPr.set('firstRow', '0')
+        tblPr.set('bandRow', '0')
+        style_id = tblPr.find('{http://schemas.openxmlformats.org/drawingml/2006/main}tableStyleId')
+        if style_id is not None:
+            tblPr.remove(style_id)
+
+        # Header Row Styling
         for col_idx, h_text in enumerate(headers):
             cell = table.cell(0, col_idx)
             cell.text = h_text
@@ -231,6 +246,9 @@ def build_reports(csv_path, pptx_output_path):
                 p.font.color.rgb = RGBColor(255, 255, 255)
                 p.font.size = Pt(9.5)
 
+            set_pptx_cell_border(cell, color="000000", width="19050")
+
+        # Data Rows Styling
         for r_idx, row_values in enumerate(slide_rows, start=1):
             spec_val = row_values[spec_col_idx] if (spec_col_idx != -1 and spec_col_idx < len(row_values)) else ""
 
@@ -254,6 +272,9 @@ def build_reports(csv_path, pptx_output_path):
                 for p in cell.text_frame.paragraphs:
                     p.font.size = Pt(8.5)
                     p.font.color.rgb = RGBColor(0, 0, 0)
+
+                # Set explicit cell borders AFTER setting text and background fill
+                set_pptx_cell_border(cell, color="000000", width="12700")
 
     out_pptx = os.path.expanduser(pptx_output_path)
     prs.save(out_pptx)
