@@ -1,4 +1,16 @@
-# Code Iteration #35
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+"""
+Data Panel & Report Generator
+-----------------------------
+Converts Cadence Virtuoso ADE Maestro CSV exports into formatted PowerPoint (.pptx)
+and PDF (.pdf) simulation summary reports with Pass/Fail color highlights and table gridlines.
+
+Repository: https://github.com/anikoofard-oss/Data_PaneL_Generation
+Author: Ali Nikoofard
+License: MIT
+"""
 import csv
 import os
 import sys
