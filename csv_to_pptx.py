@@ -1,4 +1,4 @@
-# Code Iteration #36
+# Code Iteration #39
 import csv
 import os
 import sys
@@ -30,8 +30,9 @@ from pptx.dml.color import RGBColor
 from pptx.oxml import parse_xml
 from pptx.oxml.ns import nsdecls
 
-MAX_ROWS_PER_PDF_PAGE = 30
-MAX_ROWS_PER_PPTX_SLIDE = 16
+# Maximized vertical capacities to extend tables to the bottom
+MAX_ROWS_PER_PDF_PAGE = 38
+MAX_ROWS_PER_PPTX_SLIDE = 22
 
 def set_pptx_cell_border(cell, color="000000", width="12700"):
     """Applies explicit OpenXML stroke lines to PowerPoint table cells."""
@@ -134,7 +135,7 @@ def build_reports(csv_path, pptx_output_path):
     total_data_rows = len(filtered_data)
 
     # -----------------------------------------------------------------------------
-    # 2. Build PDF Document using ReportLab (30 Rows Per Page)
+    # 2. Build PDF Document using ReportLab (Col 1 = 135pt, 38 Rows/Page)
     # -----------------------------------------------------------------------------
     pdf_output_path = pptx_output_path.rsplit('.', 1)[0] + ".pdf"
     full_pdf_path = os.path.expanduser(pdf_output_path)
@@ -143,7 +144,7 @@ def build_reports(csv_path, pptx_output_path):
         doc = SimpleDocTemplate(
             full_pdf_path,
             pagesize=landscape(letter),
-            leftMargin=20, rightMargin=20, topMargin=20, bottomMargin=20
+            leftMargin=20, rightMargin=20, topMargin=15, bottomMargin=15
         )
         
         styles = getSampleStyleSheet()
@@ -171,8 +172,8 @@ def build_reports(csv_path, pptx_output_path):
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1E3C78')),
                 ('GRID', (0, 0), (-1, -1), 0.8, colors.black),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('TOPPADDING', (0, 0), (-1, -1), 2.5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5),
+                ('TOPPADDING', (0, 0), (-1, -1), 1.8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 1.8),
                 ('LEFTPADDING', (0, 0), (-1, -1), 4),
                 ('RIGHTPADDING', (0, 0), (-1, -1), 4),
             ]
@@ -195,7 +196,13 @@ def build_reports(csv_path, pptx_output_path):
 
                 table_data.append(row_cells)
 
-            col_widths = [120] + [68] * (len(headers) - 1) if len(headers) > 1 else None
+            # Usable width = 752pt. Set Col 0 ("Output") to 135pt; split remainder evenly across other cols.
+            if len(headers) > 1:
+                rem_width = (752.0 - 135.0) / (len(headers) - 1)
+                col_widths = [135.0] + [rem_width] * (len(headers) - 1)
+            else:
+                col_widths = [752.0]
+
             pdf_table = Table(table_data, colWidths=col_widths)
             pdf_table.setStyle(TableStyle(table_style_cmd))
             
@@ -209,7 +216,7 @@ def build_reports(csv_path, pptx_output_path):
         print(f"NOTICE: Direct ReportLab PDF export encountered an issue ({e}).", flush=True)
 
     # -----------------------------------------------------------------------------
-    # 3. Build PowerPoint Deck (.pptx) with Explicit Black Borders
+    # 3. Build PowerPoint Deck (.pptx) with Balanced Col 1 Width & 22 Rows/Slide
     # -----------------------------------------------------------------------------
     prs = Presentation()
     num_cols = len(headers)
@@ -223,8 +230,22 @@ def build_reports(csv_path, pptx_output_path):
         slide_rows = filtered_data[start_row:end_row]
         rows_in_table = len(slide_rows) + 1
 
-        table_shape = slide.shapes.add_table(rows_in_table, num_cols, Inches(0.4), Inches(0.4), Inches(9.2), Inches(0.28 * rows_in_table))
+        left = Inches(0.4)
+        top = Inches(0.3)
+        total_width = Inches(9.2)
+        height = Inches(0.28 * rows_in_table)
+
+        table_shape = slide.shapes.add_table(rows_in_table, num_cols, left, top, total_width, height)
         table = table_shape.table
+
+        # Balanced Column Widths: Col 0 gets 1.8 inches; split remainder across corner cols
+        if num_cols > 1:
+            col0_width_int = int(Inches(1.8))
+            rem_col_width_int = int((Inches(9.2) - Inches(1.8)) / (num_cols - 1))
+            
+            table.columns[0].width = col0_width_int
+            for c_i in range(1, num_cols):
+                table.columns[c_i].width = rem_col_width_int
 
         # Strips default PowerPoint table theme override
         tblPr = table._tbl.tblPr
@@ -273,7 +294,6 @@ def build_reports(csv_path, pptx_output_path):
                     p.font.size = Pt(8.5)
                     p.font.color.rgb = RGBColor(0, 0, 0)
 
-                # Set explicit cell borders AFTER setting text and background fill
                 set_pptx_cell_border(cell, color="000000", width="12700")
 
     out_pptx = os.path.expanduser(pptx_output_path)
